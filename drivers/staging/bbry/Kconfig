@@ -1,0 +1,6 @@
+config BBRY_HWFEATURES
+	bool "Add sysfs entry from device tree hwfeature attribute"
+	default n
+	---help---
+	help
+	  If unsure, say N.

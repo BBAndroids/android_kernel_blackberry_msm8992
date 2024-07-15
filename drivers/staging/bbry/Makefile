@@ -1,0 +1,1 @@
+obj-$(CONFIG_BBRY_HWFEATURES)	+= hwfeatures.o
