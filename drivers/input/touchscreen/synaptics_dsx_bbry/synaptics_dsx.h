@@ -25,8 +25,6 @@
 #define PLATFORM_DRIVER_NAME "synaptics_dsx"
 #define I2C_DRIVER_NAME "synaptics_dsx_i2c"
 #define SPI_DRIVER_NAME "synaptics_dsx_spi"
-
-#include "synaptics_dsx_wakeup.h"
 /*
  * struct synaptics_dsx_cap_button_map - 0d button map
  * @nbuttons: number of 0d buttons
@@ -99,8 +97,6 @@ struct synaptics_dsx_board_data {
 	bool reg_en;
 	bool i2c_pull_up;
 	bool pm_disabled;
-	bool ddic_power_control;
-	bool wg_enabled;
 	bool wg_no_ct;
 	bool restart_sys_fw_upgrade;
 	bool force_restart_sys_fw_upgrade;
@@ -133,28 +129,16 @@ struct synaptics_dsx_board_data {
 	int disable_bc_bist;
 	struct regulator *vcc;
 	struct regulator *vcc_i2c;
-	bool dis_in_holster;
 	bool dis_in_slider;
-	bool dis_while_sliding;
 	bool enable_abs_cancel;
 	bool enable_abs_edge;
-	unsigned char num_of_slider_hall_sensors;
 	int (*gpio_config)(int gpio, bool configure, int dir, int state);
 	struct synaptics_dsx_cap_button_map *cap_button_map;
 	int device_id;
 	const char *input_dev_name;
-	struct synaptics_wakeup_criteria_t wakeup_criteria;
-	int fw_wake_swipe_distance;
-	int fw_wake_zone_top_left_x;
-	int fw_wake_zone_top_left_x1;
-	int fw_wake_zone_top_left_y;
-	int fw_wake_zone_bottom_right_x;
-	int fw_wake_zone_bottom_right_x1;
-	int fw_wake_zone_bottom_right_y;
 	int large_object_detected;
-	int fw_wake_swipe_min_speed;
-	int fw_wake_swipe_max_speed;
 	int tap_status_addr;
 	int pos_buf_addr;
 };
+
 #endif

@@ -492,6 +492,7 @@
 			synaptics,input-device-name = "touch_keypad";
 			synaptics,resolution_x = <21>;
 			synaptics,resolution_y = <21>;
+			disable-in-closed-slider;
 		};
 	};
 
@@ -527,6 +528,8 @@
 			synaptics,resolution_y = <21>;
 			synaptics,wakeup-gesture;
 			synaptics,wakeup-gesture-no-criteria;
+			enable-touch-cancel;
+			enable-edge-touches;
 		};
 
 		synaptics_dsx_i2c_display@20 {
@@ -554,6 +557,10 @@
 			synaptics,input-device-name = "touch_display";
 			synaptics,resolution_x = <21>;
 			synaptics,resolution_y = <21>;
+			synaptics,wakeup-gesture;
+			synaptics,wakeup-gesture-no-criteria;
+			enable-touch-cancel;
+			enable-edge-touches;
 		};
 	};
 
@@ -996,6 +1003,14 @@
 			debounce-interval = <15>;
 		};
 
+		lid {
+			label = "lid";
+			gpios = <&msm_gpio 74  0x1>;
+			linux,input-type = <5>;
+			linux,code = <0>; /* SW_LID */
+			gpio-key,wakeup;
+			debounce-interval = <10>;
+		};
 	};
 
 	sound {
@@ -1738,28 +1753,6 @@
 };
 
 &spmi_bus {
-	qcom,pmi8994@2 {
-		qcom,leds@a300 {
-			status = "disabled";
-			compatible = "qcom,leds-qpnp";
-			label = "mpp";
-			reg = <0xa300 0x100>;
-
-			qcom,led_mpp_4 {
-				status = "disabled";
-				label = "mpp";
-				linux,name = "led:mute";
-				qcom,default-state = "off";
-				linux,default-trigger = "none";
-				qcom,max-current = <5>;
-				qcom,id = <6>;
-				qcom,source-sel = <1>;
-				qcom,mode-ctrl = <0x61>;
-				qcom,mode = "manual";
-			};
-		};
-	};
-
 	qcom,pmi8994@3 {
 		pmi8994_pwm_1: pwm@b100 {
 			reg = <0xb100 0x100>,
@@ -1826,7 +1819,7 @@
 				qcom,max-current = <12>;
 				qcom,id = <4>;
 				linux,default-trigger = "none";
-				qcom,start-idx = <8>;
+				qcom,start-idx = <0>;
 				qcom,idx-len = <8>;
 				qcom,duty-pcts = [64 00 00 00 00 00 00 00];
 				qcom,lut-flags = <3>;
@@ -1846,7 +1839,7 @@
 				qcom,max-current = <12>;
 				qcom,id = <5>;
 				linux,default-trigger = "none";
-				qcom,start-idx = <16>;
+				qcom,start-idx = <0>;
 				qcom,idx-len = <8>;
 				qcom,duty-pcts = [64 00 00 00 00 00 00 00];
 				qcom,lut-flags = <3>;

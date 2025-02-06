@@ -22,6 +22,7 @@
 #include "msm_cci.h"
 #include "msm_cam_cci_hwreg.h"
 #include "msm_camera_io_util.h"
+#include "msm_cci_debugfs.h"
 
 #define V4L2_IDENT_CCI 50005
 #define CCI_I2C_QUEUE_0_SIZE 64
@@ -449,6 +450,13 @@ static int32_t msm_cci_i2c_read(struct v4l2_subdev *sd,
 		goto ERROR;
 	}
 
+	val = CCI_I2C_REPORT_CMD | (1 << 8);
+	rc = msm_cci_write_i2c_queue(cci_dev, val, master, queue);
+	if (rc < 0) {
+		CDBG("%s failed line %d\n", __func__, __LINE__);
+		goto ERROR;
+	}
+
 	val = msm_camera_io_r_mb(cci_dev->base + CCI_I2C_M0_Q0_CUR_WORD_CNT_ADDR
 			+ master * 0x200 + queue * 0x100);
 	CDBG("%s cur word cnt 0x%x\n", __func__, val);
@@ -734,6 +742,12 @@ static int32_t msm_cci_pinctrl_init(struct cci_device *cci_dev)
 			__func__, __LINE__);
 		return -EINVAL;
 	}
+
+	cci_dev->gpio_state_cci0_pull_down = pinctrl_lookup_state(
+						cci_pctrl->pinctrl,
+						CCI_PINCTRL_STATE_CCI0_LOW);
+	if (IS_ERR_OR_NULL(cci_dev->gpio_state_cci0_pull_down))
+		cci_dev->gpio_state_cci0_pull_down = NULL;
 	return 0;
 }
 
@@ -825,6 +839,9 @@ static int32_t msm_cci_init(struct v4l2_subdev *sd,
 		}
 		if (master < MASTER_MAX && master >= 0) {
 			mutex_lock(&cci_dev->cci_master_info[master].mutex);
+			/* Re-initialize the completion */
+			INIT_COMPLETION(cci_dev->
+				cci_master_info[master].reset_complete);
 			/* Set reset pending flag to TRUE */
 			cci_dev->cci_master_info[master].reset_pending = TRUE;
 			/* Set proper mask to RESET CMD address */
@@ -893,6 +910,8 @@ static int32_t msm_cci_init(struct v4l2_subdev *sd,
 		CDBG("%s: clk enable failed\n", __func__);
 		goto clk_enable_failed;
 	}
+	/* Re-initialize the completion */
+	INIT_COMPLETION(cci_dev->cci_master_info[master].reset_complete);
 	enable_irq(cci_dev->irq->start);
 	cci_dev->hw_version = msm_camera_io_r_mb(cci_dev->base +
 		CCI_HW_VERSION_ADDR);
@@ -1004,6 +1023,43 @@ static int32_t msm_cci_release(struct v4l2_subdev *sd)
 	return 0;
 }
 
+static int32_t bbry_cci0_low1(struct v4l2_subdev *sd)
+{
+	int32_t rc = 0;
+	struct cci_device *cci_dev;
+
+	cci_dev = v4l2_get_subdevdata(sd);
+
+        if((cci_dev->ref_count == 1) && (cci_dev->cci_pinctrl_status)) {
+		if (cci_dev->gpio_state_cci0_pull_down) {
+			rc = pinctrl_select_state(cci_dev->cci_pinctrl.pinctrl,
+				cci_dev->gpio_state_cci0_pull_down);
+			if (rc)
+				pr_err("%s:%d cannot set pins to pull down state\n",
+					__func__, __LINE__);
+		}
+	}
+
+	return rc;
+}
+
+static int32_t bbry_cci0_low2(struct v4l2_subdev *sd)
+{
+	int32_t rc = 0;
+	struct cci_device *cci_dev;
+
+	cci_dev = v4l2_get_subdevdata(sd);
+
+	if((cci_dev->ref_count == 1) && (cci_dev->cci_pinctrl_status)) {
+		rc = pinctrl_select_state(cci_dev->cci_pinctrl.pinctrl,
+				cci_dev->cci_pinctrl.gpio_state_suspend);
+		if (rc)
+			pr_err("%s:%d cannot set pins to suspend state\n",
+				__func__, __LINE__);
+	}
+
+	return rc;
+}
 static int32_t msm_cci_config(struct v4l2_subdev *sd,
 	struct msm_camera_cci_ctrl *cci_ctrl)
 {
@@ -1025,6 +1081,12 @@ static int32_t msm_cci_config(struct v4l2_subdev *sd,
 		rc = msm_cci_i2c_write(sd, cci_ctrl);
 		break;
 	case MSM_CCI_GPIO_WRITE:
+		break;
+	case MSM_CCI_BBRY_CCI0_LOW1:
+		rc = bbry_cci0_low1(sd);
+		break;
+	case MSM_CCI_BBRY_CCI0_LOW2:
+		rc = bbry_cci0_low2(sd);
 		break;
 	default:
 		rc = -ENOIOCTLCMD;
@@ -1057,14 +1119,12 @@ static irqreturn_t msm_cci_irq(int irq_num, void *data)
 				reset_complete);
 		}
 	}
-	if ((irq & CCI_IRQ_STATUS_0_I2C_M0_RD_DONE_BMSK) ||
-		(irq & CCI_IRQ_STATUS_0_I2C_M0_Q0_REPORT_BMSK) ||
+	if ((irq & CCI_IRQ_STATUS_0_I2C_M0_Q0_REPORT_BMSK) ||
 		(irq & CCI_IRQ_STATUS_0_I2C_M0_Q1_REPORT_BMSK)) {
 		cci_dev->cci_master_info[MASTER_0].status = 0;
 		complete(&cci_dev->cci_master_info[MASTER_0].reset_complete);
 	}
-	if ((irq & CCI_IRQ_STATUS_0_I2C_M1_RD_DONE_BMSK) ||
-		(irq & CCI_IRQ_STATUS_0_I2C_M1_Q0_REPORT_BMSK) ||
+	if ((irq & CCI_IRQ_STATUS_0_I2C_M1_Q0_REPORT_BMSK) ||
 		(irq & CCI_IRQ_STATUS_0_I2C_M1_Q1_REPORT_BMSK)) {
 		cci_dev->cci_master_info[MASTER_1].status = 0;
 		complete(&cci_dev->cci_master_info[MASTER_1].reset_complete);
@@ -1505,6 +1565,7 @@ static int msm_cci_probe(struct platform_device *pdev)
 	rc = of_platform_populate(pdev->dev.of_node, NULL, NULL, &pdev->dev);
 	if (rc)
 		pr_err("%s: failed to add child nodes, rc=%d\n", __func__, rc);
+	msm_cci_enable_debugfs(new_cci_dev, msm_cci_config);
 	new_cci_dev->cci_state = CCI_STATE_DISABLED;
 	g_cci_subdev = &new_cci_dev->msm_sd.sd;
 	CDBG("%s cci subdev %pK\n", __func__, &new_cci_dev->msm_sd.sd);

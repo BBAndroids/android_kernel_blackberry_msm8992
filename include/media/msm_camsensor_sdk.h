@@ -141,6 +141,7 @@ enum msm_actuator_write_type {
 	MSM_ACTUATOR_WRITE_DIR_REG,
 	MSM_ACTUATOR_POLL,
 	MSM_ACTUATOR_READ_WRITE,
+	MSM_ACTUATOR_READ_DAC,
 };
 
 enum msm_actuator_i2c_operation {

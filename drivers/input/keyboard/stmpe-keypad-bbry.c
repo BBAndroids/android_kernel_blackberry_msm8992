@@ -98,7 +98,6 @@ struct stmpe_keypad {
 	struct timer_list space_timer;
 	int down_keys[KEYPAD_MAX_KEY_BUFFER];
 	bool slide_open;
-	bool slide_transitioning;
 	bool irq_enabled;
 	bool keypad_enabled;
 	struct {
@@ -155,15 +154,8 @@ static const struct input_device_id input_event_ids[] = {
 		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
 			 INPUT_DEVICE_ID_MATCH_SWBIT,
 		.evbit = { BIT_MASK(EV_SW) },
-		.swbit = { [BIT_WORD(SW_KEYPAD_SLIDE)] =
-					BIT_MASK(SW_KEYPAD_SLIDE) },
-	},
-	{
-		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
-			 INPUT_DEVICE_ID_MATCH_SWBIT,
-		.evbit = { BIT_MASK(EV_SW) },
-		.swbit = { [BIT_WORD(SW_KEYPAD_TRANSITION)] =
-					BIT_MASK(SW_KEYPAD_TRANSITION) },
+		.swbit = { [BIT_WORD(SW_LID)] =
+					BIT_MASK(SW_LID) },
 	},
 	{ },			/* Terminating zero entry */
 };
@@ -563,11 +555,8 @@ static void stmpe_input_event(struct input_handle *handle, unsigned int type,
 
 	if (type == EV_SW) {
 		switch (code) {
-		case SW_KEYPAD_SLIDE:
-			keypad->slide_open = value;
-			break;
-		case SW_KEYPAD_TRANSITION:
-			keypad->slide_transitioning = value;
+		case SW_LID:
+			keypad->slide_open = !value;
 			break;
 		default:
 			return;
@@ -587,8 +576,8 @@ static int stmpe_input_event_connect(struct input_handler *handler,
 	struct input_handle *handle;
 	struct stmpe_keypad *keypad = handler->private;
 
-	if (test_bit(SW_KEYPAD_SLIDE, dev->swbit)) {
-		if (test_bit(SW_KEYPAD_SLIDE, dev->sw)) {
+	if (test_bit(SW_LID, dev->swbit)) {
+		if (test_bit(SW_LID, dev->sw)) {
 			keypad->slide_open = 1;
 			queue_work(keypad->workqueue, &keypad->input_work);
 		}
@@ -1037,8 +1026,7 @@ static void stmp_keypad_input_wq(struct work_struct *work)
 	struct stmpe_keypad *keypad =
 			container_of(work, struct stmpe_keypad,
 							input_work);
-	stmpe_enable_keypad(keypad,
-			(keypad->slide_open && !keypad->slide_transitioning));
+	stmpe_enable_keypad(keypad, keypad->slide_open);
 }
 
 static int stmpe_enable_keypad(struct stmpe_keypad *keypad, bool enable)
@@ -1193,7 +1181,7 @@ static int stmpe_keypad_probe(struct i2c_client *i2c,
 		goto fail;
 	}
 
-	keypad->slide_transitioning = 0;
+	keypad->slide_open = 1;
 	keypad->i2c_client = i2c;
 	keypad->wd_task = NULL;
 	keypad->keypad_enabled = false;

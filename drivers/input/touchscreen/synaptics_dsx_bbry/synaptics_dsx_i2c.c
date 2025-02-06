@@ -33,196 +33,9 @@
 #include <synaptics_dsx.h>
 #include "synaptics_dsx_core.h"
 
-#include "synaptics_dsx_wakeup.h"
-
 #define SYN_I2C_RETRY_TIMES 10
 #define LOCKUP_POLLING_COUNT 3
 
-static int synaptics_rmi4_i2c_set_page(struct synaptics_rmi4_data *rmi4_data,
-		unsigned short addr)
-{
-	int retval;
-	unsigned char retry;
-	unsigned char buf[PAGE_SELECT_LEN];
-	unsigned char page;
-	struct i2c_client *i2c = to_i2c_client(rmi4_data->pdev->dev.parent);
-
-	page = ((addr >> 8) & MASK_8BIT);
-	if (page != rmi4_data->current_page) {
-		buf[0] = MASK_8BIT;
-		buf[1] = page;
-		for (retry = 0; retry < SYN_I2C_RETRY_TIMES; retry++) {
-			retval = i2c_master_send(i2c, buf, PAGE_SELECT_LEN);
-			if (retval != PAGE_SELECT_LEN) {
-				dev_err(rmi4_data->pdev->dev.parent,
-						"%s: I2C retry %d\n",
-						__func__, retry + 1);
-				if (retry == 0)
-					dump_stack();
-				msleep(20);
-			} else {
-				rmi4_data->current_page = page;
-				break;
-			}
-		}
-	} else {
-		retval = PAGE_SELECT_LEN;
-	}
-
-	return retval;
-}
-
-static int synaptics_rmi4_i2c_read(struct synaptics_rmi4_data *rmi4_data,
-		unsigned short addr, unsigned char *data, unsigned short length)
-{
-	int retval;
-	unsigned char retry;
-	unsigned char buf;
-	struct i2c_client *i2c = to_i2c_client(rmi4_data->pdev->dev.parent);
-	struct i2c_msg msg[] = {
-		{
-			.addr = i2c->addr,
-			.flags = 0,
-			.len = 1,
-			.buf = &buf,
-		},
-		{
-			.addr = i2c->addr,
-			.flags = I2C_M_RD,
-			.len = length,
-			.buf = data,
-		},
-	};
-
-	buf = addr & MASK_8BIT;
-
-	if (rmi4_data->sm_err.i2c) {
-		dev_err(rmi4_data->pdev->dev.parent,
-				"%s: Simulated I2C read error\n",
-				__func__);
-		rmi4_data->sm_err.i2c--;
-		retval = -EIO;
-		goto exit;
-	}
-
-	mutex_lock(&rmi4_data->rmi4_io_ctrl_mutex);
-
-	retval = synaptics_rmi4_i2c_set_page(rmi4_data, addr);
-	if (retval != PAGE_SELECT_LEN) {
-		retval = -EIO;
-		goto exit;
-	}
-
-	for (retry = 0; retry < SYN_I2C_RETRY_TIMES; retry++) {
-		if (i2c_transfer(i2c->adapter, msg, 2) == 2) {
-			retval = length;
-			break;
-		}
-		dev_err(rmi4_data->pdev->dev.parent,
-				"%s: I2C retry %d\n",
-				__func__, retry + 1);
-		if (retry == 0)
-			dump_stack();
-		msleep(20);
-	}
-
-
-	if (retry == SYN_I2C_RETRY_TIMES) {
-		dev_err(rmi4_data->pdev->dev.parent,
-				"%s: I2C read over retry limit\n",
-				__func__);
-		retval = -EIO;
-	}
-
-exit:
-	if ((retry > 1) || (retval < 0)) {
-		rmi4_data->mtouch_counter.i2c_rw_error++;
-	}
-	mutex_unlock(&rmi4_data->rmi4_io_ctrl_mutex);
-
-	return retval;
-}
-
-static int synaptics_rmi4_i2c_write(struct synaptics_rmi4_data *rmi4_data,
-		unsigned short addr, unsigned char *data, unsigned short length)
-{
-	int retval;
-	unsigned char retry;
-	unsigned char buf[length + 1];
-	struct i2c_client *i2c = to_i2c_client(rmi4_data->pdev->dev.parent);
-	struct i2c_msg msg[] = {
-		{
-			.addr = i2c->addr,
-			.flags = 0,
-			.len = length + 1,
-			.buf = buf,
-		}
-	};
-
-	if (rmi4_data->sm_err.i2c) {
-		dev_err(rmi4_data->pdev->dev.parent,
-				"%s: Simulated I2C read error\n",
-				__func__);
-		rmi4_data->sm_err.i2c--;
-		retval = -EIO;
-		goto exit;
-	}
-	mutex_lock(&rmi4_data->rmi4_io_ctrl_mutex);
-
-	retval = synaptics_rmi4_i2c_set_page(rmi4_data, addr);
-	if (retval != PAGE_SELECT_LEN) {
-		retval = -EIO;
-		goto exit;
-	}
-
-	buf[0] = addr & MASK_8BIT;
-	memcpy(&buf[1], &data[0], length);
-
-	for (retry = 0; retry < SYN_I2C_RETRY_TIMES; retry++) {
-		if (i2c_transfer(i2c->adapter, msg, 1) == 1) {
-			retval = length;
-			break;
-		}
-		dev_err(rmi4_data->pdev->dev.parent,
-				"%s: I2C retry %d\n",
-				__func__, retry + 1);
-		if (retry == 0)
-			dump_stack();
-		msleep(20);
-	}
-
-	if (retry == SYN_I2C_RETRY_TIMES) {
-		dev_err(rmi4_data->pdev->dev.parent,
-				"%s: I2C write over retry limit\n",
-				__func__);
-		retval = -EIO;
-	}
-
-	dev_dbg(rmi4_data->pdev->dev.parent,
-		"%s: I2C write. Reg=0x%04x, Len=%d, Data[0]=0x%02x\n",
-		__func__, addr, length, data[0]);
-
-exit:
-	if ((retry > 1) || (retval < 0)) {
-		rmi4_data->mtouch_counter.i2c_rw_error++;
-	}
-
-	mutex_unlock(&rmi4_data->rmi4_io_ctrl_mutex);
-
-	return retval;
-}
-
-static struct synaptics_dsx_bus_access bus_access = {
-	.type = BUS_I2C,
-	.read = synaptics_rmi4_i2c_read,
-	.write = synaptics_rmi4_i2c_write,
-};
-
-
-static void synaptics_rmi4_i2c_dev_release(struct device *dev)
-{
-	return;
-}
 
 #ifdef CONFIG_OF
 static int synaptics_rmi4_parse_dt(struct device *dev,
@@ -409,41 +222,10 @@ static int synaptics_rmi4_parse_dt(struct device *dev,
 	/* Selectively apply power management */
 	bdata->pm_disabled = of_property_read_bool(np, "synaptics,pm-disabled");
 
-	/* Touch controls power to the DDIC */
-	bdata->ddic_power_control = of_property_read_bool(np,
-					"synaptics,ddic-power-control");
-
-	/* Wakeup gesture support */
-	bdata->wg_enabled = of_property_read_bool(np,
-					"synaptics,wakeup-gesture");
-
 	/* Wakeup gesture without criteria */
 	bdata->wg_no_ct = of_property_read_bool(np,
 					"synaptics,wakeup-gesture-no-criteria");
 
-	if (bdata->wg_enabled) {
-		int fw_wake_zone_width;
-
-		memcpy(&bdata->wakeup_criteria, &default_wakeup_criteria,
-			sizeof(struct synaptics_wakeup_criteria_t));
-		bdata->fw_wake_swipe_distance = SYNAPTICS_FIRMWARE_MIN_WAKE_DISTANCE;
-		bdata->fw_wake_zone_top_left_x = SYNAPTICS_FIRMWARE_ZONE_TOP_LEFT_X;
-		bdata->fw_wake_zone_top_left_y = SYNAPTICS_FIRMWARE_ZONE_TOP_LEFT_Y;
-		bdata->fw_wake_zone_bottom_right_x = SYNAPTICS_FIRMWARE_ZONE_BOTTOM_RIGHT_X;
-		bdata->fw_wake_zone_bottom_right_y = SYNAPTICS_FIRMWARE_ZONE_BOTTOM_RIGHT_Y;
-		bdata->fw_wake_swipe_min_speed = SYNAPTICS_FIRMWARE_MIN_WAKE_SPEED;
-		bdata->fw_wake_swipe_max_speed = SYNAPTICS_WAKEUP_MAX_WAKE_SPEED;
-
-		fw_wake_zone_width = ((bdata->fw_wake_zone_bottom_right_x - bdata->fw_wake_zone_top_left_x)*30)/100;
-		bdata->fw_wake_zone_top_left_x1 = bdata->fw_wake_zone_top_left_x + fw_wake_zone_width;
-		bdata->fw_wake_zone_bottom_right_x1 = bdata->fw_wake_zone_bottom_right_x - fw_wake_zone_width;
-
-		bdata->wakeup_criteria.max_speed =
-			(bdata->fw_wake_swipe_distance + bdata->fw_wake_swipe_max_speed) *
-			(bdata->fw_wake_swipe_distance + bdata->fw_wake_swipe_max_speed);
-
-
-	}
 	/* Restart system after firmware upgrade */
 	bdata->restart_sys_fw_upgrade = of_property_read_bool(np,
 					"synaptics,restart-sys-after-fw-upgrade");
@@ -467,14 +249,6 @@ static int synaptics_rmi4_parse_dt(struct device *dev,
 			bdata->lockup_poll_count = LOCKUP_POLLING_COUNT;
 	}
 
-	/* disable while in holster */
-	bdata->dis_in_holster =
-		of_property_read_bool(np, "disable-in-holster");
-
-	/* ignore the touches while sliding */
-	bdata->dis_while_sliding =
-			of_property_read_bool(np, "disable-while-sliding");
-
 	/* disable while slider is closed */
 	bdata->dis_in_slider =
 			of_property_read_bool(np, "disable-in-closed-slider");
@@ -486,13 +260,6 @@ static int synaptics_rmi4_parse_dt(struct device *dev,
 	/* enable_abs_edge event support */
 	bdata->enable_abs_edge =
 			of_property_read_bool(np, "enable-edge-touches");
-
-	tmp = 0;
-	retval = of_property_read_u32(np, "number-of-slider-hall-sensors", &tmp);
-	if  (!retval)
-		bdata->num_of_slider_hall_sensors = tmp;
-	else
-		bdata->num_of_slider_hall_sensors = 2;  /* default value */
 
 	prop = of_find_property(np, "synaptics,product-id-major", NULL);
 	if (prop) {
@@ -550,6 +317,184 @@ static int synaptics_rmi4_parse_dt(struct device *dev,
 }
 #endif
 
+static int synaptics_rmi4_i2c_set_page(struct synaptics_rmi4_data *rmi4_data,
+		unsigned short addr)
+{
+	int retval;
+	unsigned char retry;
+	unsigned char buf[PAGE_SELECT_LEN];
+	unsigned char page;
+	struct i2c_client *i2c = to_i2c_client(rmi4_data->pdev->dev.parent);
+
+	page = ((addr >> 8) & MASK_8BIT);
+	if (page != rmi4_data->current_page) {
+		buf[0] = MASK_8BIT;
+		buf[1] = page;
+		for (retry = 0; retry < SYN_I2C_RETRY_TIMES; retry++) {
+			retval = i2c_master_send(i2c, buf, PAGE_SELECT_LEN);
+			if (retval != PAGE_SELECT_LEN) {
+				dev_err(rmi4_data->pdev->dev.parent,
+						"%s: I2C retry %d\n",
+						__func__, retry + 1);
+				if (retry == 0)
+					dump_stack();
+				msleep(20);
+			} else {
+				rmi4_data->current_page = page;
+				break;
+			}
+		}
+	} else {
+		retval = PAGE_SELECT_LEN;
+	}
+
+	return retval;
+}
+
+static int synaptics_rmi4_i2c_read(struct synaptics_rmi4_data *rmi4_data,
+		unsigned short addr, unsigned char *data, unsigned short length)
+{
+	int retval;
+	unsigned char retry;
+	unsigned char buf;
+	struct i2c_client *i2c = to_i2c_client(rmi4_data->pdev->dev.parent);
+	struct i2c_msg msg[] = {
+		{
+			.addr = i2c->addr,
+			.flags = 0,
+			.len = 1,
+			.buf = &buf,
+		},
+		{
+			.addr = i2c->addr,
+			.flags = I2C_M_RD,
+			.len = length,
+			.buf = data,
+		},
+	};
+
+	buf = addr & MASK_8BIT;
+
+	if (rmi4_data->sm_err.i2c) {
+		dev_err(rmi4_data->pdev->dev.parent,
+				"%s: Simulated I2C read error\n",
+				__func__);
+		rmi4_data->sm_err.i2c--;
+		retval = -EIO;
+		goto exit;
+	}
+
+	mutex_lock(&rmi4_data->rmi4_io_ctrl_mutex);
+
+	retval = synaptics_rmi4_i2c_set_page(rmi4_data, addr);
+	if (retval != PAGE_SELECT_LEN) {
+		retval = -EIO;
+		goto exit;
+	}
+
+	for (retry = 0; retry < SYN_I2C_RETRY_TIMES; retry++) {
+		if (i2c_transfer(i2c->adapter, msg, 2) == 2) {
+			retval = length;
+			break;
+		}
+		dev_err(rmi4_data->pdev->dev.parent,
+				"%s: I2C retry %d\n",
+				__func__, retry + 1);
+		if (retry == 0)
+			dump_stack();
+		msleep(20);
+	}
+
+
+	if (retry == SYN_I2C_RETRY_TIMES) {
+		dev_err(rmi4_data->pdev->dev.parent,
+				"%s: I2C read over retry limit\n",
+				__func__);
+		retval = -EIO;
+	}
+
+exit:
+	mutex_unlock(&rmi4_data->rmi4_io_ctrl_mutex);
+
+	return retval;
+}
+
+static int synaptics_rmi4_i2c_write(struct synaptics_rmi4_data *rmi4_data,
+		unsigned short addr, unsigned char *data, unsigned short length)
+{
+	int retval;
+	unsigned char retry;
+	unsigned char buf[length + 1];
+	struct i2c_client *i2c = to_i2c_client(rmi4_data->pdev->dev.parent);
+	struct i2c_msg msg[] = {
+		{
+			.addr = i2c->addr,
+			.flags = 0,
+			.len = length + 1,
+			.buf = buf,
+		}
+	};
+
+	if (rmi4_data->sm_err.i2c) {
+		dev_err(rmi4_data->pdev->dev.parent,
+				"%s: Simulated I2C read error\n",
+				__func__);
+		rmi4_data->sm_err.i2c--;
+		retval = -EIO;
+		goto exit;
+	}
+	mutex_lock(&rmi4_data->rmi4_io_ctrl_mutex);
+
+	retval = synaptics_rmi4_i2c_set_page(rmi4_data, addr);
+	if (retval != PAGE_SELECT_LEN) {
+		retval = -EIO;
+		goto exit;
+	}
+
+	buf[0] = addr & MASK_8BIT;
+	memcpy(&buf[1], &data[0], length);
+
+	for (retry = 0; retry < SYN_I2C_RETRY_TIMES; retry++) {
+		if (i2c_transfer(i2c->adapter, msg, 1) == 1) {
+			retval = length;
+			break;
+		}
+		dev_err(rmi4_data->pdev->dev.parent,
+				"%s: I2C retry %d\n",
+				__func__, retry + 1);
+		if (retry == 0)
+			dump_stack();
+		msleep(20);
+	}
+
+	if (retry == SYN_I2C_RETRY_TIMES) {
+		dev_err(rmi4_data->pdev->dev.parent,
+				"%s: I2C write over retry limit\n",
+				__func__);
+		retval = -EIO;
+	}
+
+	dev_dbg(rmi4_data->pdev->dev.parent,
+		"%s: I2C write. Reg=0x%04x, Len=%d, Data[0]=0x%02x\n",
+		__func__, addr, length, data[0]);
+
+exit:
+	mutex_unlock(&rmi4_data->rmi4_io_ctrl_mutex);
+
+	return retval;
+}
+
+static struct synaptics_dsx_bus_access bus_access = {
+	.type = BUS_I2C,
+	.read = synaptics_rmi4_i2c_read,
+	.write = synaptics_rmi4_i2c_write,
+};
+
+static void synaptics_rmi4_i2c_dev_release(struct device *dev)
+{
+	return;
+}
+
 static int synaptics_rmi4_i2c_probe(struct i2c_client *client,
 		const struct i2c_device_id *dev_id)
 {
@@ -558,9 +503,7 @@ static int synaptics_rmi4_i2c_probe(struct i2c_client *client,
 	struct platform_device *synaptics_dsx_i2c_device;
 	static int device_id;
 
-	dev_dbg(&client->dev,
-		"%s: ENTRY\n",
-		__func__);
+	dev_dbg(&client->dev, "%s: ENTRY\n", __func__);
 
 	if (!i2c_check_functionality(client->adapter,
 			I2C_FUNC_SMBUS_BYTE_DATA)) {
@@ -633,9 +576,7 @@ static int synaptics_rmi4_i2c_probe(struct i2c_client *client,
 	pm_runtime_enable(&client->dev);
 #endif
 
-	dev_dbg(&client->dev,
-		"%s: EXIT\n",
-		__func__);
+	dev_dbg(&client->dev, "%s: EXIT\n", __func__);
 
 	return 0;
 }
@@ -675,8 +616,10 @@ MODULE_DEVICE_TABLE(i2c, synaptics_rmi4_id_table);
 
 #ifdef CONFIG_OF
 static struct of_device_id synaptics_match_table[] = {
-	{ .compatible = "synaptics,dsx",},
-	{ },
+	{
+		.compatible = "synaptics,dsx",
+	},
+	{},
 };
 #else
 #define synaptics_match_table NULL

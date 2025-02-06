@@ -43,30 +43,6 @@
 };
 
 &soc {
-	gpio_keys {
-		compatible = "gpio-keys";
-		input-name = "gpio-keys";
-		slide_closed {
-			label = "slide_closed";
-			gpios = <&msm_gpio 74  0x0>;
-			linux,input-type = <5>;
-			linux,code = <0xa>;
-			gpio-key,wakeup;
-			debounce-interval = <10>;
-		};
-	};
-};
-
-&soc {
-	wlan_cfg {
-		compatible = "android,bcmdhd_wlan";
-		config = "/vendor/etc/wifi/cfg_venice.ini";
-		/* interrupt source is either "pme_l" or "gpio0" */
-		intr_src = "pme_l";
-	};
-};
-
-&soc {
 	i2c_12: i2c@f9968000 {
 		stmpe_keypad@40 {
 			/delete-property/ st,reset_det_gpio;
@@ -82,6 +58,35 @@
 	i2c_2: i2c@f9924000 {
 		synaptics_dsx_i2c_display@67 {
 			number-of-slider-hall-sensors = <1>;
+		};
+	};
+
+	wlan_cfg {
+		compatible = "android,bcmdhd_wlan";
+		config = "/vendor/etc/wifi/cfg_venice.ini";
+		/* interrupt source is either "pme_l" or "gpio0" */
+		intr_src = "pme_l";
+	};
+};
+
+&spmi_bus {
+	qcom,pmi8994@2 {
+		qcom,leds@a300 {
+			compatible = "qcom,leds-qpnp";
+			label = "mpp";
+			reg = <0xa300 0x100>;
+
+			qcom,led_mpp_4 {
+				label = "mpp";
+				linux,name = "led:mute";
+				qcom,default-state = "off";
+				linux,default-trigger = "none";
+				qcom,max-current = <5>;
+				qcom,id = <6>;
+				qcom,source-sel = <1>;
+				qcom,mode-ctrl = <0x61>;
+				qcom,mode = "manual";
+			};
 		};
 	};
 };

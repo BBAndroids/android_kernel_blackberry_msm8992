@@ -443,22 +443,17 @@ int msm_camera_get_dt_power_setting_data(struct device_node *of_node,
 {
 	int rc = 0, i, j;
 	int count = 0;
+	int countDown = 0;
 	const char *seq_name = NULL;
 	uint32_t *array = NULL;
 	struct msm_sensor_power_setting *ps;
-
-	struct msm_sensor_power_setting *power_setting;
-	uint16_t *power_setting_size, size = 0;
-	bool need_reverse = 0;
+	struct msm_sensor_power_setting *psDown;
 
 	if (!power_info)
 		return -EINVAL;
 
-	power_setting = power_info->power_setting;
-	power_setting_size = &power_info->power_setting_size;
-
 	count = of_property_count_strings(of_node, "qcom,cam-power-seq-type");
-	*power_setting_size = count;
+	power_info->power_setting_size = count;
 
 	CDBG("%s qcom,cam-power-seq-type count %d\n", __func__, count);
 
@@ -470,8 +465,21 @@ int msm_camera_get_dt_power_setting_data(struct device_node *of_node,
 		pr_err("%s failed %d\n", __func__, __LINE__);
 		return -ENOMEM;
 	}
-	power_setting = ps;
 	power_info->power_setting = ps;
+
+	countDown = of_property_count_strings(of_node, "qcom,cam-powerdown-seq-type");
+	power_info->power_down_setting_size = countDown;
+	CDBG("%s qcom,cam-powerdown-seq-type count %d\n", __func__, countDown);
+
+	if (countDown) {
+		psDown = kzalloc(sizeof(*psDown) * countDown, GFP_KERNEL);
+		if (!psDown) {
+			pr_err("%s failed %d\n", __func__, __LINE__);
+			rc = -ENOMEM;
+			goto ERROR1;
+		}
+		power_info->power_down_setting = psDown;
+	}
 
 	for (i = 0; i < count; i++) {
 		rc = of_property_read_string_index(of_node,
@@ -481,7 +489,7 @@ int msm_camera_get_dt_power_setting_data(struct device_node *of_node,
 			seq_name);
 		if (rc < 0) {
 			pr_err("%s failed %d\n", __func__, __LINE__);
-			goto ERROR1;
+			goto ERROR2;
 		}
 		if (!strcmp(seq_name, "sensor_vreg")) {
 			ps[i].seq_type = SENSOR_VREG;
@@ -502,10 +510,46 @@ int msm_camera_get_dt_power_setting_data(struct device_node *of_node,
 		} else {
 			CDBG("%s: unrecognized seq-type\n", __func__);
 			rc = -EILSEQ;
-			goto ERROR1;
+			goto ERROR2;
 		}
 	}
 
+	for (i = 0; i < countDown; i++) {
+		rc = of_property_read_string_index(of_node,
+			"qcom,cam-powerdown-seq-type", i,
+			&seq_name);
+		CDBG("%s downseq_name[%d] = %s\n", __func__, i,
+			seq_name);
+		if (rc < 0) {
+			pr_err("%s failed %d\n", __func__, __LINE__);
+			goto ERROR2;
+		}
+		if (!strcmp(seq_name, "sensor_vreg")) {
+			psDown[i].seq_type = SENSOR_VREG;
+			CDBG("%s:%d seq_type[%d] %d\n", __func__, __LINE__,
+				i, psDown[i].seq_type);
+		} else if (!strcmp(seq_name, "sensor_gpio")) {
+			psDown[i].seq_type = SENSOR_GPIO;
+			CDBG("%s:%d seq_type[%d] %d\n", __func__, __LINE__,
+				i, psDown[i].seq_type);
+		} else if (!strcmp(seq_name, "sensor_clk")) {
+			psDown[i].seq_type = SENSOR_CLK;
+			CDBG("%s:%d seq_type[%d] %d\n", __func__, __LINE__,
+				i, psDown[i].seq_type);
+		} else if (!strcmp(seq_name, "sensor_i2c_mux")) {
+			psDown[i].seq_type = SENSOR_I2C_MUX;
+			CDBG("%s:%d seq_type[%d] %d\n", __func__, __LINE__,
+				i, psDown[i].seq_type);
+		} else if (!strcmp(seq_name, "sensor_i2c")) {
+			psDown[i].seq_type = SENSOR_I2C;
+			CDBG("%s:%d seq_type[%d] %d\n", __func__, __LINE__,
+				i, psDown[i].seq_type);
+		} else {
+			CDBG("%s: unrecognized downseq-type\n", __func__);
+			rc = -EILSEQ;
+			goto ERROR2;
+		}
+	}
 
 	for (i = 0; i < count; i++) {
 		rc = of_property_read_string_index(of_node,
@@ -515,7 +559,7 @@ int msm_camera_get_dt_power_setting_data(struct device_node *of_node,
 			seq_name);
 		if (rc < 0) {
 			pr_err("%s failed %d\n", __func__, __LINE__);
-			goto ERROR1;
+			goto ERROR2;
 		}
 		switch (ps[i].seq_type) {
 		case SENSOR_VREG:
@@ -568,23 +612,95 @@ int msm_camera_get_dt_power_setting_data(struct device_node *of_node,
 		}
 		if (rc < 0) {
 			CDBG("%s: unrecognized seq-val\n", __func__);
-			goto ERROR1;
+			goto ERROR2;
 		}
 	}
 
-	array = kzalloc(sizeof(uint32_t) * count, GFP_KERNEL);
+	for (i = 0; i < countDown; i++) {
+		rc = of_property_read_string_index(of_node,
+			"qcom,cam-powerdown-seq-val", i,
+			&seq_name);
+		CDBG("%s downseq_name[%d] = %s\n", __func__, i,
+			seq_name);
+		if (rc < 0) {
+			pr_err("%s failed %d\n", __func__, __LINE__);
+			goto ERROR2;
+		}
+		switch (psDown[i].seq_type) {
+		case SENSOR_VREG:
+			for (j = 0; j < num_vreg; j++) {
+				if (!strcmp(seq_name, cam_vreg[j].reg_name))
+					break;
+			}
+			if (j < num_vreg)
+				psDown[i].seq_val = j;
+			else
+				rc = -EILSEQ;
+			break;
+		case SENSOR_GPIO:
+			if (!strcmp(seq_name, "sensor_gpio_reset"))
+				psDown[i].seq_val = SENSOR_GPIO_RESET;
+			else if (!strcmp(seq_name, "sensor_gpio_standby"))
+				psDown[i].seq_val = SENSOR_GPIO_STANDBY;
+			else if (!strcmp(seq_name, "sensor_gpio_vdig"))
+				psDown[i].seq_val = SENSOR_GPIO_VDIG;
+			else if (!strcmp(seq_name, "sensor_gpio_vana"))
+				psDown[i].seq_val = SENSOR_GPIO_VANA;
+			else if (!strcmp(seq_name, "sensor_gpio_vaf"))
+				psDown[i].seq_val = SENSOR_GPIO_VAF;
+			else if (!strcmp(seq_name, "sensor_gpio_vio"))
+				psDown[i].seq_val = SENSOR_GPIO_VIO;
+			else if (!strcmp(seq_name, "sensor_gpio_custom1"))
+				psDown[i].seq_val = SENSOR_GPIO_CUSTOM1;
+			else if (!strcmp(seq_name, "sensor_gpio_custom2"))
+				psDown[i].seq_val = SENSOR_GPIO_CUSTOM2;
+			else
+				rc = -EILSEQ;
+			break;
+		case SENSOR_CLK:
+			if (!strcmp(seq_name, "sensor_cam_mclk"))
+				psDown[i].seq_val = SENSOR_CAM_MCLK;
+			else if (!strcmp(seq_name, "sensor_cam_clk"))
+				psDown[i].seq_val = SENSOR_CAM_CLK;
+			else
+				rc = -EILSEQ;
+			break;
+		case SENSOR_I2C_MUX:
+			if (!strcmp(seq_name, "none"))
+				psDown[i].seq_val = 0;
+			else
+				rc = -EILSEQ;
+			break;
+		case SENSOR_I2C:
+			if (!strcmp(seq_name, "sensor_gpio_custom1"))
+				psDown[i].seq_val = SENSOR_GPIO_CUSTOM1;
+			else if (!strcmp(seq_name, "sensor_gpio_custom2"))
+				psDown[i].seq_val = SENSOR_GPIO_CUSTOM2;
+			else
+				rc = -EILSEQ;
+			break;
+		default:
+			rc = -EILSEQ;
+			break;
+		}
+		if (rc < 0) {
+			CDBG("%s: unrecognized downseq-val\n", __func__);
+			goto ERROR2;
+		}
+	}
+
+	array = kzalloc(sizeof(uint32_t) * ((count > countDown) ? count:countDown), GFP_KERNEL);
 	if (!array) {
 		pr_err("%s failed %d\n", __func__, __LINE__);
 		rc = -ENOMEM;
-		goto ERROR1;
+		goto ERROR2;
 	}
-
 
 	rc = of_property_read_u32_array(of_node, "qcom,cam-power-seq-cfg-val",
 		array, count);
 	if (rc < 0) {
 		pr_err("%s failed %d\n", __func__, __LINE__);
-		goto ERROR2;
+		goto ERROR3;
 	}
 	for (i = 0; i < count; i++) {
 		if (ps[i].seq_type == SENSOR_GPIO) {
@@ -599,42 +715,74 @@ int msm_camera_get_dt_power_setting_data(struct device_node *of_node,
 			ps[i].config_val);
 	}
 
+	if (countDown) {
+		rc = of_property_read_u32_array(of_node, "qcom,cam-powerdown-seq-cfg-val",
+			array, countDown);
+		if (rc < 0) {
+			pr_err("%s failed %d\n", __func__, __LINE__);
+			goto ERROR3;
+		}
+	}
+	for (i = 0; i < countDown; i++) {
+		if (psDown[i].seq_type == SENSOR_GPIO) {
+			if (array[i] == 0)
+				psDown[i].config_val = GPIO_OUT_LOW;
+			else if (array[i] == 1)
+				psDown[i].config_val = GPIO_OUT_HIGH;
+		} else {
+			psDown[i].config_val = array[i];
+		}
+		CDBG("%s powerdown_setting[%d].config_val = %ld\n", __func__, i,
+			psDown[i].config_val);
+	}
+
 	rc = of_property_read_u32_array(of_node, "qcom,cam-power-seq-delay",
 		array, count);
 	if (rc < 0) {
 		pr_err("%s failed %d\n", __func__, __LINE__);
-		goto ERROR2;
+		goto ERROR3;
 	}
 	for (i = 0; i < count; i++) {
 		ps[i].delay = array[i];
 		CDBG("%s power_setting[%d].delay = %d\n", __func__,
 			i, ps[i].delay);
 	}
+
+	if (countDown) {
+		rc = of_property_read_u32_array(of_node, "qcom,cam-powerdown-seq-delay",
+			array, countDown);
+		if (rc < 0) {
+			pr_err("%s failed %d\n", __func__, __LINE__);
+			goto ERROR3;
+		}
+	}
+	for (i = 0; i < countDown; i++) {
+		psDown[i].delay = array[i];
+		CDBG("%s powerdown_setting[%d].delay = %d\n", __func__,
+			i, psDown[i].delay);
+	}
 	kfree(array);
 
-	size = *power_setting_size;
-
-	if (NULL != ps && 0 != size)
-		need_reverse = 1;
-
-	power_info->power_down_setting =
-		kzalloc(sizeof(*ps) * size, GFP_KERNEL);
-
-	if (!power_info->power_down_setting) {
-		pr_err("%s failed %d\n", __func__, __LINE__);
-		rc = -ENOMEM;
-		goto ERROR1;
-	}
-
-	memcpy(power_info->power_down_setting,
-		ps, sizeof(*ps) * size);
-
-	power_info->power_down_setting_size = size;
-
-	if (need_reverse) {
-		int c, end = size - 1;
+	if (!countDown) {
+		int c;
+		int end = count - 1;
 		struct msm_sensor_power_setting power_down_setting_t;
-		for (c = 0; c < size/2; c++) {
+
+		power_info->power_down_setting =
+			kzalloc(sizeof(*ps) * count, GFP_KERNEL);
+
+		if (!power_info->power_down_setting) {
+			pr_err("%s failed %d\n", __func__, __LINE__);
+			rc = -ENOMEM;
+			goto ERROR1;
+		}
+
+		memcpy(power_info->power_down_setting,
+			ps, sizeof(*ps) * count);
+
+		power_info->power_down_setting_size = count;
+
+		for (c = 0; c < count/2; c++) {
 			power_down_setting_t =
 				power_info->power_down_setting[c];
 			power_info->power_down_setting[c] =
@@ -645,11 +793,16 @@ int msm_camera_get_dt_power_setting_data(struct device_node *of_node,
 		}
 	}
 	return rc;
-ERROR2:
+ERROR3:
 	kfree(array);
+ERROR2:
+	if (countDown) {
+		kfree(psDown);
+		power_info->power_down_setting_size = 0;
+	}
 ERROR1:
 	kfree(ps);
-	power_setting_size = 0;
+	power_info->power_setting_size = 0;
 	return rc;
 }
 
@@ -1573,6 +1726,17 @@ int msm_camera_power_down(struct msm_camera_power_ctrl_t *ctrl,
 		case SENSOR_I2C_MUX:
 			if (ctrl->i2c_conf && ctrl->i2c_conf->use_i2c_mux)
 				msm_camera_disable_i2c_mux(ctrl->i2c_conf);
+			break;
+		case SENSOR_I2C:
+			if (SENSOR_GPIO_CUSTOM1 == pd->seq_val) {
+				sensor_i2c_client->i2c_func_tbl->i2c_util(
+					sensor_i2c_client,
+					MSM_CCI_BBRY_CCI0_LOW1);
+			} else if (SENSOR_GPIO_CUSTOM2 == pd->seq_val) {
+				sensor_i2c_client->i2c_func_tbl->i2c_util(
+					sensor_i2c_client,
+					MSM_CCI_BBRY_CCI0_LOW2);
+			}
 			break;
 		default:
 			pr_err("%s error power seq type %d\n", __func__,

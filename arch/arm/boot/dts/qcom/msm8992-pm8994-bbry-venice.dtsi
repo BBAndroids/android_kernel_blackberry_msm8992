@@ -85,8 +85,6 @@
 	i2c_1: i2c@f9923000 {
 		synaptics_dsx_i2c_keypad@20 {
 			synaptics,product-id-major = "61516";
-			disable-in-holster;
-			disable-in-closed-slider;
 			number-of-slider-hall-sensors = <2>;
 		};
 	};
@@ -95,9 +93,6 @@
 			synaptics,product-id-major = "60253";
 		};
 		synaptics_dsx_i2c_display@67 {
-			disable-while-sliding;
-			enable-touch-cancel;
-			enable-edge-touches;
 			number-of-slider-hall-sensors = <2>;
 			tap-status-addr = <0x450>;
 			position-buffer-addr = <0x400>;

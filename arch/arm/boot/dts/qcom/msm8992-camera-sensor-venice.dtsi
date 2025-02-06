@@ -87,28 +87,22 @@
 		qcom,clk-freq-out = <400000>;
 		qcom,disable-dma;
 
-		max77387_flash@4A {
+		max77387_flash0: max77387_flash@4A {
 			compatible = "maxim,max77387";
 			reg = <0x4A>; /* i2c slave address */
+			flash-type = "MAX77387";
+			max-current = <2000>;
+			default-current = <2000>;
+			use-for-videolight;
 		};
 
-		max77387_torch@4A {
+		max77387_torch0: max77387_torch@4A {
 			compatible = "maxim,max77387";
 			reg = <0x4A>; /* i2c slave address */
+			flash-type = "MAX77387";
+			max-current = <200>;
+			default-current = <200>;
 		};
-	};
-
-	max77387_flash0: max77387_flash@4A {
-		flash-type = "MAX77387";
-		max-current = <2000>;
-		default-current = <2000>;
-		use-for-videolight;
-	};
-
-	max77387_torch0: max77387_torch@4A {
-		flash-type = "MAX77387";
-		max-current = <200>;
-		default-current = <200>;
 	};
 
 	qcom,spmi@fc4c0000 {
@@ -155,8 +149,8 @@
 					boost-voltage-max = <3600000>;
 				};
 
-				/delete-node/ pmi8994_torch1;
-				/delete-node/ pmi8994_flash1;
+				/delete-node/ qcom,flash_1;
+				/delete-node/ qcom,torch_1;
 			};
 		};
 	};
@@ -377,8 +371,8 @@
 		reg = <0x1>;
 		qcom,csiphy-sd-index = <1>;
 		qcom,csid-sd-index = <1>;
-		qcom,eeprom-src = <&eeprom1>;
 		qcom,mount-angle = <270>;
+		qcom,eeprom-src = <&eeprom1>;
 		cam_vana-supply = <&pm8994_l29>;
 		qcom,cam-vreg-name = "cam_vana";
 		qcom,cam-vreg-min-voltage = <3200000>;

@@ -328,6 +328,80 @@ static int32_t msm_ois_config(struct msm_ois_ctrl_t *o_ctrl,
 		kfree(reg_setting);
 		break;
 	}
+	case CFG_OIS_I2C_READ_SEQ_TABLE: {
+		struct msm_camera_i2c_seq_reg_setting conf_array;
+		struct msm_camera_i2c_seq_reg_array *reg_setting = NULL;
+
+#ifdef CONFIG_COMPAT
+		if (is_compat_task()) {
+			memcpy(&conf_array,
+				(void *)cdata->cfg.settings,
+				sizeof(struct msm_camera_i2c_seq_reg_setting));
+		} else
+#endif
+		if (copy_from_user(&conf_array,
+			(void *)cdata->cfg.settings,
+			sizeof(struct msm_camera_i2c_seq_reg_setting))) {
+			pr_err("%s:%d failed\n", __func__, __LINE__);
+			rc = -EFAULT;
+			break;
+		}
+
+		if (conf_array.size != 1) {
+			pr_err("%s:%d failed\n", __func__, __LINE__);
+			rc = -EFAULT;
+			break;
+		}
+
+		reg_setting = kzalloc(conf_array.size *
+			(sizeof(struct msm_camera_i2c_seq_reg_array)),
+			GFP_KERNEL);
+		if (!reg_setting) {
+			pr_err("%s:%d failed\n", __func__, __LINE__);
+			rc = -ENOMEM;
+			break;
+		}
+
+		if (copy_from_user(reg_setting, (void *)conf_array.reg_setting,
+			conf_array.size *
+			sizeof(struct msm_camera_i2c_seq_reg_array))) {
+			pr_err("%s:%d failed\n", __func__, __LINE__);
+			kfree(reg_setting);
+			rc = -EFAULT;
+			break;
+		}
+
+		if ((!reg_setting->reg_data_size) ||
+			(reg_setting->reg_data_size > I2C_SEQ_REG_DATA_MAX)) {
+			pr_err("%s:%d failed\n", __func__, __LINE__);
+			kfree(reg_setting);
+			rc = -EFAULT;
+			break;
+		}
+
+		rc = o_ctrl->i2c_client.i2c_func_tbl->
+			i2c_read_seq(&o_ctrl->i2c_client,
+			reg_setting->reg_addr, reg_setting->reg_data,
+			reg_setting->reg_data_size);
+
+		if (rc < 0) {
+			pr_err("%s:%d: i2c_read_seq failed\n",
+			__func__, __LINE__);
+			kfree(reg_setting);
+			break;
+		}
+
+		if (copy_to_user((void __user *)conf_array.reg_setting->reg_data,
+			(void *)reg_setting->reg_data, reg_setting->reg_data_size)) {
+			pr_err("%s:%d copy failed\n", __func__, __LINE__);
+			kfree(reg_setting);
+			rc = -EFAULT;
+			break;
+		}
+
+		kfree(reg_setting);
+		break;
+	}
 	default:
 		break;
 	}
@@ -573,6 +647,7 @@ static long msm_ois_subdev_do_ioctl(
 			parg = &ois_data;
 			break;
 		case CFG_OIS_I2C_WRITE_SEQ_TABLE:
+		case CFG_OIS_I2C_READ_SEQ_TABLE:
 			if (copy_from_user(&settings32,
 				(void *)compat_ptr(u32->cfg.settings),
 				sizeof(
@@ -618,6 +693,7 @@ static int32_t msm_ois_platform_probe(struct platform_device *pdev)
 	struct msm_camera_cci_client *cci_client = NULL;
 	struct msm_ois_ctrl_t *msm_ois_t = NULL;
 	struct msm_ois_vreg *vreg_cfg;
+	uint32_t freqMode = 0;
 	CDBG("Enter\n");
 
 	if (!pdev->dev.of_node) {
@@ -647,6 +723,13 @@ static int32_t msm_ois_platform_probe(struct platform_device *pdev)
 		kfree(msm_ois_t);
 		pr_err("failed rc %d\n", rc);
 		return rc;
+	}
+
+	rc = of_property_read_u32((&pdev->dev)->of_node, "qcom,i2c-freq-mode",
+		&freqMode);
+	if (rc < 0 || (freqMode >= I2C_MAX_MODES)) {
+		freqMode = I2C_STANDARD_MODE;
+		CDBG("%s Default I2C standard speed mode.\n", __func__);
 	}
 
 	if (of_find_property((&pdev->dev)->of_node,
@@ -681,6 +764,7 @@ static int32_t msm_ois_platform_probe(struct platform_device *pdev)
 	cci_client = msm_ois_t->i2c_client.cci_client;
 	cci_client->cci_subdev = msm_cci_get_subdev();
 	cci_client->cci_i2c_master = msm_ois_t->cci_master;
+	cci_client->i2c_freq_mode = freqMode;
 	v4l2_subdev_init(&msm_ois_t->msm_sd.sd,
 		msm_ois_t->ois_v4l2_subdev_ops);
 	v4l2_set_subdevdata(&msm_ois_t->msm_sd.sd, msm_ois_t);

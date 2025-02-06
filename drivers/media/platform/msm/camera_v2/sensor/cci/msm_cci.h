@@ -29,6 +29,7 @@
 
 #define CCI_PINCTRL_STATE_DEFAULT "cci_default"
 #define CCI_PINCTRL_STATE_SLEEP "cci_suspend"
+#define CCI_PINCTRL_STATE_CCI0_LOW "cci0_pull_down"
 
 #define CCI_NUM_CLK_MAX	16
 #define CCI_NUM_CLK_CASES 5
@@ -64,6 +65,8 @@ enum msm_cci_cmd_type {
 	MSM_CCI_I2C_WRITE,
 	MSM_CCI_I2C_WRITE_SEQ,
 	MSM_CCI_GPIO_WRITE,
+	MSM_CCI_BBRY_CCI0_LOW1,
+	MSM_CCI_BBRY_CCI0_LOW2,
 };
 
 struct msm_camera_cci_wait_sync_cfg {
@@ -152,6 +155,7 @@ struct cci_device {
 	uint8_t cci_gpio_tbl_size;
 	uint8_t master_clk_init[MASTER_MAX];
 	struct msm_pinctrl_info cci_pinctrl;
+	struct pinctrl_state *gpio_state_cci0_pull_down;
 	uint8_t cci_pinctrl_status;
 	struct regulator *reg_ptr;
 	uint32_t cycles_per_us;

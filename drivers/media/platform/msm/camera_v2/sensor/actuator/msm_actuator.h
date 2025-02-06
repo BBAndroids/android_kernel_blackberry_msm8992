@@ -59,6 +59,7 @@ struct msm_actuator_func_tbl {
 	int32_t (*actuator_set_position)(struct msm_actuator_ctrl_t *,
 		struct msm_actuator_set_position_t *);
 	int32_t (*actuator_park_lens)(struct msm_actuator_ctrl_t *);
+	int32_t (*actuator_get_position)(struct msm_actuator_ctrl_t *, uint16_t *);
 };
 
 struct msm_actuator {

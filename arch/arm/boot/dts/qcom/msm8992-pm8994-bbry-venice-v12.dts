@@ -14,7 +14,6 @@
 /dts-v1/;
 
 #include "msm8992-pm8994-bbry-venice.dtsi"
-#include "msm8992-pm8994-bbry-venice-sensors.dtsi"
 
 / {
 	model = "MSM 8992 VENICE V12";

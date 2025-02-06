@@ -255,6 +255,7 @@ enum eeprom_cfg_type_t {
 	CFG_EEPROM_READ_CAL_DATA,
 	CFG_EEPROM_WRITE_DATA,
 	CFG_EEPROM_GET_MM_INFO,
+	BBRY_CFG_EEPROM_READ_MEM,
 };
 
 struct eeprom_get_t {
@@ -287,6 +288,7 @@ struct msm_eeprom_cfg_data {
 		struct eeprom_write_t write_data;
 		struct eeprom_get_cmm_t get_cmm_data;
 	} cfg;
+	uint16_t module_id;
 };
 
 #ifdef CONFIG_COMPAT
@@ -372,6 +374,7 @@ struct msm_eeprom_cfg_data32 {
 		struct eeprom_read_t32 read_data;
 		struct eeprom_write_t32 write_data;
 	} cfg;
+	uint16_t module_id;
 };
 
 struct msm_camera_i2c_seq_reg_setting32 {
@@ -420,6 +423,7 @@ enum msm_actuator_cfg_type_t {
 	CFG_ACTUATOR_POWERDOWN,
 	CFG_ACTUATOR_POWERUP,
 	CFG_ACTUATOR_INIT,
+	CFG_GET_POSITION,
 };
 
 enum msm_ois_cfg_type_t {
@@ -428,6 +432,7 @@ enum msm_ois_cfg_type_t {
 	CFG_OIS_POWERUP,
 	CFG_OIS_CONTROL,
 	CFG_OIS_I2C_WRITE_SEQ_TABLE,
+	CFG_OIS_I2C_READ_SEQ_TABLE,
 };
 
 enum msm_ois_i2c_operation {
@@ -549,6 +554,7 @@ struct msm_actuator_cfg_data {
 		struct msm_actuator_get_info_t get_info;
 		struct msm_actuator_set_position_t setpos;
 		enum af_camera_name cam_name;
+		uint16_t position;
 	} cfg;
 };
 

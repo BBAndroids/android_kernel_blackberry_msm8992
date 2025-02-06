@@ -17,6 +17,7 @@
 #include "msm_sd.h"
 #include "msm_cci.h"
 #include "msm_eeprom.h"
+#include "bbry_eeprom_map.h"
 
 #undef CDBG
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
@@ -257,6 +258,7 @@ static int msm_eeprom_config(struct msm_eeprom_ctrl_t *e_ctrl,
 	case CFG_EEPROM_GET_INFO:
 		CDBG("%s E CFG_EEPROM_GET_INFO\n", __func__);
 		cdata->is_supported = e_ctrl->is_supported;
+		cdata->module_id = e_ctrl->module_id;
 		length = strlen(e_ctrl->eboard_info->eeprom_name) + 1;
 		if (length > MAX_EEPROM_NAME) {
 			pr_err("%s:%d invalid eeprom name length %d\n",
@@ -267,6 +269,14 @@ static int msm_eeprom_config(struct msm_eeprom_ctrl_t *e_ctrl,
 		memcpy(cdata->cfg.eeprom_name,
 			e_ctrl->eboard_info->eeprom_name,
 			sizeof(cdata->cfg.eeprom_name));
+		break;
+        case BBRY_CFG_EEPROM_READ_MEM:
+		rc = bbry_read_eeprom_memory(e_ctrl, &e_ctrl->cal_data);
+		if (rc < 0) {
+			pr_err("%s bbry_read_eeprom_memory failed\n", __func__);
+			e_ctrl->is_supported = 0;
+		} else
+			e_ctrl->is_supported |= 0xFF;
 		break;
 	case CFG_EEPROM_GET_CAL_DATA:
 		CDBG("%s E CFG_EEPROM_GET_CAL_DATA\n", __func__);
@@ -907,6 +917,7 @@ static int msm_eeprom_config32(struct msm_eeprom_ctrl_t *e_ctrl,
 	case CFG_EEPROM_GET_INFO:
 		CDBG("%s E CFG_EEPROM_GET_INFO\n", __func__);
 		cdata->is_supported = e_ctrl->is_supported;
+		cdata->module_id = e_ctrl->module_id;
 		length = strlen(e_ctrl->eboard_info->eeprom_name) + 1;
 		if (length > MAX_EEPROM_NAME) {
 			pr_err("%s:%d invalid eeprom name length %d\n",
@@ -918,6 +929,14 @@ static int msm_eeprom_config32(struct msm_eeprom_ctrl_t *e_ctrl,
 		memcpy(cdata->cfg.eeprom_name,
 			e_ctrl->eboard_info->eeprom_name,
 			sizeof(cdata->cfg.eeprom_name));
+		break;
+        case BBRY_CFG_EEPROM_READ_MEM:
+		rc = bbry_read_eeprom_memory(e_ctrl, &e_ctrl->cal_data);
+		if (rc < 0) {
+			pr_err("%s bbry_read_eeprom_memory failed\n", __func__);
+			e_ctrl->is_supported = 0;
+		} else
+			e_ctrl->is_supported |= 0xFF;
 		break;
 	case CFG_EEPROM_GET_CAL_DATA:
 		CDBG("%s E CFG_EEPROM_GET_CAL_DATA\n", __func__);
@@ -997,7 +1016,8 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 	e_ctrl->is_supported = 0;
 	if (!of_node) {
 		pr_err("%s dev.of_node NULL\n", __func__);
-		return -EINVAL;
+		rc = -EINVAL;
+		goto ectrl_free;
 	}
 
 	rc = of_property_read_u32(of_node, "cell-index",
@@ -1005,7 +1025,7 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 	CDBG("cell-index %d, rc %d\n", pdev->id, rc);
 	if (rc < 0) {
 		pr_err("failed rc %d\n", rc);
-		return rc;
+		goto ectrl_free;
 	}
 	e_ctrl->subdev_id = pdev->id;
 
@@ -1014,13 +1034,13 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 	CDBG("qcom,cci-master %d, rc %d\n", e_ctrl->cci_master, rc);
 	if (rc < 0) {
 		pr_err("%s failed rc %d\n", __func__, rc);
-		return rc;
+		goto ectrl_free;
 	}
 	rc = of_property_read_u32(of_node, "qcom,slave-addr",
 		&temp);
 	if (rc < 0) {
 		pr_err("%s failed rc %d\n", __func__, rc);
-		return rc;
+		goto ectrl_free;
 	}
 
 	/* Set platform device handle */
@@ -1032,7 +1052,8 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 		struct msm_camera_cci_client), GFP_KERNEL);
 	if (!e_ctrl->i2c_client.cci_client) {
 		pr_err("%s failed no memory\n", __func__);
-		return -ENOMEM;
+		rc = -ENOMEM;
+		goto ectrl_free;
 	}
 
 	e_ctrl->eboard_info = kzalloc(sizeof(
@@ -1084,9 +1105,18 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 	if (rc)
 		goto board_free;
 
-	rc = msm_eeprom_parse_memory_map(of_node, &e_ctrl->cal_data);
-	if (rc < 0)
+	rc = bbry_eeprom_parse_memory_map(e_ctrl, &e_ctrl->cal_data);
+	if (rc < 0) {
+		pr_err("bbry eeprom parse failed rc %d\n", rc);
 		goto free_datamap;
+	}
+
+	rc = bbry_read_eeprom_memory(e_ctrl, &e_ctrl->cal_data);
+	if (rc < 0) {
+		pr_err("%s read_eeprom_memory failed\n", __func__);
+		goto free_datamap;
+	}
+
 	e_ctrl->read_eeprom = 0;
 	v4l2_subdev_init(&e_ctrl->msm_sd.sd,
 		e_ctrl->eeprom_v4l2_subdev_ops);
@@ -1108,7 +1138,11 @@ static int msm_eeprom_platform_probe(struct platform_device *pdev)
 	e_ctrl->msm_sd.sd.devnode->fops = &msm_eeprom_v4l2_subdev_fops;
 #endif
 
-	e_ctrl->is_supported = 1;
+	/*
+	* CRC is done in userspace and kernel driver
+	* only provide the full otp map
+	*/
+	e_ctrl->is_supported |= 0xFF;
 	CDBG("%s X\n", __func__);
 	return rc;
 
@@ -1119,6 +1153,7 @@ board_free:
 	kfree(e_ctrl->eboard_info);
 cciclient_free:
 	kfree(e_ctrl->i2c_client.cci_client);
+ectrl_free:
 	kfree(e_ctrl);
 	return rc;
 }

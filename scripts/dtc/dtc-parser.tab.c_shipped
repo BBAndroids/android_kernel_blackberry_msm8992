@@ -73,8 +73,6 @@
 #include "dtc.h"
 #include "srcpos.h"
 
-YYLTYPE yylloc;
-
 extern int yylex(void);
 extern void print_error(char const *fmt, ...);
 extern void yyerror(char const *s);
@@ -176,6 +174,7 @@ typedef union YYSTYPE
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1
 #endif
+extern YYLTYPE yylloc;
 
 
 /* Copy the second part of user declarations.  */
@@ -1261,7 +1260,12 @@ int yychar;
 
 /* The semantic value of the lookahead symbol.  */
 YYSTYPE yylval;
-
+/* Location data for the lookahead symbol.  */
+YYLTYPE yylloc
+# if defined YYLTYPE_IS_TRIVIAL && YYLTYPE_IS_TRIVIAL
+  = { 1, 1, 1, 1 }
+# endif
+;
 /* Number of syntax errors so far.  */
 int yynerrs;
 

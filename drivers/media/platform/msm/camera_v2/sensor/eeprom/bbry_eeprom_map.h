@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2014 Google, Inc.
+ * Copyright (C) 2015 BlackBerry Limited
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -9,12 +9,14 @@
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- *
  */
+#ifndef BBRY_EEPROM_MAP_H
+#define BBRY_EEPROM_MAP_H
 
-#ifndef _FIQ_WATCHDOG_H_
-#define _FIQ_WATCHDOG_H_
+int bbry_read_eeprom_memory(struct msm_eeprom_ctrl_t *e_ctrl,
+					struct msm_eeprom_memory_block_t *block);
 
-void fiq_watchdog_triggered(const struct pt_regs *regs, void *svc_sp);
+int bbry_eeprom_parse_memory_map(struct msm_eeprom_ctrl_t *e_ctrl,
+					struct msm_eeprom_memory_block_t *data);
 
 #endif
